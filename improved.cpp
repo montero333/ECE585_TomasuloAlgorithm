@@ -5,69 +5,69 @@
 using namespace std;
 
 // Constants (These can be made configurable)
-const int DEFAULT_ADD_LAT = 4;    // Latency for ADD/SUB operations
-const int DEFAULT_MULT_LAT = 12; // Latency for MULT operation
-const int DEFAULT_DIV_LAT = 38;  // Latency for DIV operation
-const int ISSUE_LAT = 1;         // Latency for issuing an instruction
-const int WRITEBACK_LAT = 1;     // Latency for writing back a result
+const int DEFAULT_ADD_LAT = 4;
+const int DEFAULT_MULT_LAT = 12;
+const int DEFAULT_DIV_LAT = 38;
+const int ISSUE_LAT = 1;
+const int WRITEBACK_LAT = 1;
 
 // Define operation codes
 enum Operation { ADD, SUB, MULT, DIV, NONE };
 
-// Instruction Class: Represents an instruction with its operands, operation type, and timestamps.
+// Instruction Class
 class Instruction {
 public:
-    int rd, rs, rt;        // Destination and source registers
-    Operation op;          // Operation type (ADD, SUB, MULT, DIV)
-    int issueClock;        // Clock cycle when issued
-    int executeClockBegin; // Clock cycle when execution starts
-    int executeClockEnd;   // Clock cycle when execution ends
-    int writebackClock;    // Clock cycle when result is written back
+    int rd, rs, rt;
+    Operation op;
+    int issueClock, executeClockBegin, executeClockEnd, writebackClock;
 
     Instruction(int RD, int RS, int RT, Operation OP)
         : rd(RD), rs(RS), rt(RT), op(OP), issueClock(0),
           executeClockBegin(0), executeClockEnd(0), writebackClock(0) {}
 };
 
-// Register Status Class: Tracks if a register is busy and which reservation station is writing to it.
+// Register Status Class
 class RegisterStatus {
 public:
-    bool busy; // Is the register busy?
-    int Qi;    // Index of the reservation station producing the result
+    bool busy;
+    int Qi; // Reservation Station producing the result
 
     RegisterStatus() : busy(false), Qi(-1) {}
 };
 
-// Reservation Station Class: Represents a functional unit for executing operations.
+// Reservation Station Class
 class ReservationStation {
 public:
-    bool busy;         // Is the station busy?
-    int Qj, Qk;        // Reservation stations producing operands
-    int Vj, Vk;        // Operands
-    int latency;       // Execution latency
-    Operation op;      // Operation type
-    int result;        // Result of the operation
-    bool resultReady;  // Is the result ready?
-    int instNum;       // Associated instruction number
-    int issueLat;      // Remaining issue latency
-    int writebackLat;  // Remaining writeback latency
+    bool busy;
+    int Qj, Qk;
+    int Vj, Vk;
+    int latency;
+    Operation op;
+    int result;
+    bool resultReady;
+    int instNum;
+    int issueLat, writebackLat;
 
-    ReservationStation() : busy(false), Qj(-1), Qk(-1), Vj(0), Vk(0),
-                           latency(0), op(NONE), result(0), resultReady(false),
-                           instNum(-1), issueLat(0), writebackLat(0) {}
+    ReservationStation()
+        : busy(false), Qj(-1), Qk(-1), Vj(0), Vk(0),
+          latency(0), op(NONE), result(0), resultReady(false),
+          instNum(-1), issueLat(0), writebackLat(0) {}
 };
 
 // Global Clock
-int Clock = 0; // Current clock cycle
-bool Done = false; // Simulation completion flag
-int TotalWritebacks = 0; // Count of completed instructions
-int CurrentIssueIndex = 0; // Index of the instruction to be issued next
+int Clock = 0;
+bool Done = false;
+int TotalWritebacks = 0;
+int CurrentIssueIndex = 0;
 
 // Function Prototypes
-void issueInstruction(vector<Instruction>&, vector<ReservationStation>&, vector<RegisterStatus>&, vector<int>&);
+void issueInstruction(vector<Instruction>&, vector<ReservationStation>&,
+                      vector<RegisterStatus>&, vector<int>&);
 void executeInstructions(vector<Instruction>&, vector<ReservationStation>&);
-void writebackResults(vector<Instruction>&, vector<ReservationStation>&, vector<RegisterStatus>&, vector<int>&);
-void printStatus(const vector<Instruction>&, const vector<ReservationStation>&, const vector<int>&, const vector<RegisterStatus>&);
+void writebackResults(vector<Instruction>&, vector<ReservationStation>&,
+                      vector<RegisterStatus>&, vector<int>&);
+void printStatus(const vector<Instruction>&, const vector<ReservationStation>&,
+                 const vector<int>&, const vector<RegisterStatus>&);
 
 int main() {
     // Initialize Instructions (Example set)
@@ -88,27 +88,26 @@ int main() {
 
     // Main simulation loop
     while (!Done) {
-        Clock++; // Increment clock
-
-        // Process the three stages
+        Clock++;
         issueInstruction(instructions, reservationStations, registerStatus, registers);
         executeInstructions(instructions, reservationStations);
         writebackResults(instructions, reservationStations, registerStatus, registers);
-
-        // Print the status after each clock cycle
         printStatus(instructions, reservationStations, registers, registerStatus);
 
         // Check if all instructions have completed
         if (TotalWritebacks == instructions.size()) Done = true;
     }
+
     return 0;
 }
 
-// Issue Stage Function: Issues an instruction if a free reservation station is available
-void issueInstruction(vector<Instruction>& instructions, vector<ReservationStation>& reservationStations, vector<RegisterStatus>& registerStatus, vector<int>& registers) {
+// Issue Stage Function
+void issueInstruction(vector<Instruction>& instructions,
+                      vector<ReservationStation>& reservationStations,
+                      vector<RegisterStatus>& registerStatus, vector<int>& registers) {
     if (CurrentIssueIndex >= instructions.size()) return; // All instructions issued
 
-    Instruction& inst = instructions[CurrentIssueIndex]; // Current instruction
+    Instruction& inst = instructions[CurrentIssueIndex];
     for (auto& rs : reservationStations) {
         if (!rs.busy) { // Found an available reservation station
             rs.busy = true;
@@ -116,15 +115,25 @@ void issueInstruction(vector<Instruction>& instructions, vector<ReservationStati
             rs.instNum = CurrentIssueIndex;
             rs.issueLat = ISSUE_LAT;
 
-            // Check if source operands are available
-            rs.Vj = (!registerStatus[inst.rs].busy) ? registers[inst.rs] : (rs.Qj = registerStatus[inst.rs].Qi, 0);
-            rs.Vk = (!registerStatus[inst.rt].busy) ? registers[inst.rt] : (rs.Qk = registerStatus[inst.rt].Qi, 0);
+            // Check if operands are available
+            if (!registerStatus[inst.rs].busy) {
+                rs.Vj = registers[inst.rs];
+                rs.Qj = -1; // Operand available
+            } else {
+                rs.Qj = registerStatus[inst.rs].Qi; // Waiting for operand
+            }
+            if (!registerStatus[inst.rt].busy) {
+                rs.Vk = registers[inst.rt];
+                rs.Qk = -1; // Operand available
+            } else {
+                rs.Qk = registerStatus[inst.rt].Qi; // Waiting for operand
+            }
 
-            // Mark destination register as busy
+            // Mark the destination register as busy
             registerStatus[inst.rd].busy = true;
             registerStatus[inst.rd].Qi = &rs - &reservationStations[0];
 
-            // Record issue time
+            // Record the issue time
             inst.issueClock = Clock;
             CurrentIssueIndex++;
             break;
@@ -132,46 +141,66 @@ void issueInstruction(vector<Instruction>& instructions, vector<ReservationStati
     }
 }
 
-// Execute Stage Function: Executes instructions if operands are ready
-void executeInstructions(vector<Instruction>& instructions, vector<ReservationStation>& reservationStations) {
+// Execute Stage Function
+void executeInstructions(vector<Instruction>& instructions,
+                         vector<ReservationStation>& reservationStations) {
     for (auto& rs : reservationStations) {
         if (rs.busy && rs.Qj == -1 && rs.Qk == -1) { // Operands available
-            if (rs.latency == 0) instructions[rs.instNum].executeClockBegin = Clock; // Record execution start
+            if (rs.latency == 0) { // First execution cycle
+                instructions[rs.instNum].executeClockBegin = Clock;
+            }
             rs.latency++;
 
-            // Check if execution is complete
-            int operationLatency = (rs.op == ADD || rs.op == SUB) ? DEFAULT_ADD_LAT : (rs.op == MULT) ? DEFAULT_MULT_LAT : DEFAULT_DIV_LAT;
+            // Check if the operation has completed
+            int operationLatency = (rs.op == ADD || rs.op == SUB) ? DEFAULT_ADD_LAT :
+                                   (rs.op == MULT) ? DEFAULT_MULT_LAT :
+                                   DEFAULT_DIV_LAT;
+
             if (rs.latency >= operationLatency) {
-                rs.result = (rs.op == ADD) ? rs.Vj + rs.Vk : (rs.op == SUB) ? rs.Vj - rs.Vk : (rs.op == MULT) ? rs.Vj * rs.Vk : rs.Vj / rs.Vk;
+                rs.result = (rs.op == ADD) ? rs.Vj + rs.Vk :
+                            (rs.op == SUB) ? rs.Vj - rs.Vk :
+                            (rs.op == MULT) ? rs.Vj * rs.Vk : rs.Vj / rs.Vk;
                 rs.resultReady = true;
                 rs.latency = 0;
-                instructions[rs.instNum].executeClockEnd = Clock; // Record execution end
+                instructions[rs.instNum].executeClockEnd = Clock;
             }
         }
     }
 }
 
-// Writeback Stage Function: Writes results back to registers and clears reservation stations
-void writebackResults(vector<Instruction>& instructions, vector<ReservationStation>& reservationStations, vector<RegisterStatus>& registerStatus, vector<int>& registers) {
+// Writeback Stage Function
+void writebackResults(vector<Instruction>& instructions,
+                      vector<ReservationStation>& reservationStations,
+                      vector<RegisterStatus>& registerStatus, vector<int>& registers) {
     for (auto& rs : reservationStations) {
         if (rs.resultReady) {
-            if (rs.writebackLat < WRITEBACK_LAT) { rs.writebackLat++; continue; }
+            if (rs.writebackLat < WRITEBACK_LAT) {
+                rs.writebackLat++;
+                continue;
+            }
 
             Instruction& inst = instructions[rs.instNum];
-            if (inst.writebackClock == 0) inst.writebackClock = Clock;
+            if (inst.writebackClock == 0) {
+                inst.writebackClock = Clock;
+            }
 
-            // Write result to destination register
+            // Write result to the destination register
             registers[inst.rd] = rs.result;
             registerStatus[inst.rd].busy = false;
             registerStatus[inst.rd].Qi = -1;
 
-            // Update dependent reservation stations
+            // Update any dependent reservation stations
             for (auto& otherRs : reservationStations) {
-                if (otherRs.Qj == &rs - &reservationStations[0]) otherRs.Vj = rs.result, otherRs.Qj = -1;
-                if (otherRs.Qk == &rs - &reservationStations[0]) otherRs.Vk = rs.result, otherRs.Qk = -1;
+                if (otherRs.Qj == &rs - &reservationStations[0]) {
+                    otherRs.Vj = rs.result;
+                    otherRs.Qj = -1;
+                }
+                if (otherRs.Qk == &rs - &reservationStations[0]) {
+                    otherRs.Vk = rs.result;
+                    otherRs.Qk = -1;
+                }
             }
 
-            // Clear reservation station
             rs.busy = false;
             rs.resultReady = false;
             rs.writebackLat = 0;
@@ -180,18 +209,17 @@ void writebackResults(vector<Instruction>& instructions, vector<ReservationStati
     }
 }
 
-// Print Status Function: Displays the status of instructions, registers, and reservation stations
-void printStatus(const vector<Instruction>& instructions, const vector<ReservationStation>& reservationStations, const vector<int>& registers, const vector<RegisterStatus>& registerStatus) {
+// Print Status Function
+void printStatus(const vector<Instruction>& instructions,
+                 const vector<ReservationStation>& reservationStations,
+                 const vector<int>& registers, const vector<RegisterStatus>& registerStatus) {
     cout << "Clock Cycle: " << Clock << endl;
-
-    // Print instruction timestamps
     cout << "Instructions: ";
     for (const auto& inst : instructions) {
-        cout << "[" << inst.issueClock << ", " << inst.executeClockBegin << "-" << inst.executeClockEnd << ", " << inst.writebackClock << "] ";
+        cout << "[" << inst.issueClock << ", " << inst.executeClockBegin << "-"
+             << inst.executeClockEnd << ", " << inst.writebackClock << "] ";
     }
     cout << endl;
-
-    // Print register contents
     cout << "Registers: ";
     for (const auto& reg : registers) cout << reg << " ";
     cout << endl;
